@@ -76,12 +76,19 @@ type v2CollInfo struct {
 	RowCount       int64     `json:"rowCount"`
 }
 
+// v2Param is one entry in the "params" array in a v2 field describe response.
+// Milvus returns params as [{"key":"dim","value":"1536"}], not as a map.
+type v2Param struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type v2Field struct {
-	Name        string                 `json:"fieldName"`
-	DataType    string                 `json:"dataType"`
-	IsPrimary   bool                   `json:"isPrimary"`
-	ElementType string                 `json:"elementType,omitempty"`
-	Params      map[string]interface{} `json:"typeParams"`
+	Name      string    `json:"name"`
+	DataType  string    `json:"type"`
+	IsPrimary bool      `json:"primaryKey"`
+	AutoID    bool      `json:"autoId"`
+	Params    []v2Param `json:"params"`
 }
 
 // v1QueryResp wraps POST /v1/vector/query

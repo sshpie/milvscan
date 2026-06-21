@@ -48,12 +48,19 @@ func describeCollection(c *httpClient, name string, ver apiVersion) CollectionRe
 			return cr
 		}
 		cr.RowCount = r.Data.RowCount
+		// Describe may not include row count; try the stats endpoint.
+		if cr.RowCount == 0 {
+			cr.RowCount = fetchV2RowCount(c, name)
+		}
 		for _, f := range r.Data.Fields {
 			fi := FieldInfo{Name: f.Name, Type: f.DataType, Primary: f.IsPrimary}
-			if dim, ok := f.Params["dim"]; ok {
-				fi.Dimension = parseDim(dim)
-				if fi.Dimension > 0 && cr.VectorDim == 0 {
-					cr.VectorDim = fi.Dimension
+			// Params is a [{key,value}] slice; extract "dim" for vector fields.
+			for _, p := range f.Params {
+				if p.Key == "dim" {
+					fi.Dimension = parseDim(p.Value)
+					if fi.Dimension > 0 && cr.VectorDim == 0 {
+						cr.VectorDim = fi.Dimension
+					}
 				}
 			}
 			cr.Fields = append(cr.Fields, fi)
@@ -83,6 +90,24 @@ func describeCollection(c *httpClient, name string, ver apiVersion) CollectionRe
 	}
 
 	return cr
+}
+
+// fetchV2RowCount calls /v2/vectordb/collections/get_stats to get the row count
+// for a collection. Returns 0 when unavailable.
+func fetchV2RowCount(c *httpClient, name string) int64 {
+	type statsResp struct {
+		Code    int `json:"code"`
+		Data    struct {
+			RowCount int64 `json:"rowCount"`
+		} `json:"data"`
+	}
+	var r statsResp
+	status, _ := c.post("/v2/vectordb/collections/get_stats",
+		map[string]interface{}{"collectionName": name}, &r)
+	if status == 200 && r.Code == 0 {
+		return r.Data.RowCount
+	}
+	return 0
 }
 
 // parseDim converts the "dim" parameter to an int. Milvus can return it as

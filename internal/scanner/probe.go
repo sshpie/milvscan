@@ -107,17 +107,67 @@ func isAuthCode(code int) bool {
 	return code == 1800 || code == 65535 || code == 80
 }
 
-// metricsReal checks /metrics for milvus_* metric families -- the Cat-13
-// discriminator for real vs selective decoy. Selective decoys respond correctly
-// on known API paths but either have no /metrics at all or return 0 milvus_*
-// metric families. A real Milvus instance always has milvus_* counters in /metrics.
-// Returns true when real milvus metrics are found, false for decoy or unreachable.
+// metricsReal is the Cat-13 discriminator for real Milvus vs selective decoy.
+//
+// Port 9091 (management): /metrics returns 200 with milvus_* Prometheus families.
+// Port 19530 (REST+gRPC): /metrics returns 404 -- this port does not serve Prometheus.
+//
+// Strategy:
+//   - 200 with milvus_* in body -> real (9091 case)
+//   - 200 without milvus_* -> decoy (9091 selective decoy case)
+//   - 404 -> fall back to version-endpoint discriminator (19530 case)
+//   - error/empty body -> false (conservative)
 func metricsReal(c *httpClient) bool {
-	_, body, err := c.getRaw("/metrics")
-	if err != nil || len(body) == 0 {
+	status, body, err := c.getRaw("/metrics")
+	if err != nil {
 		return false
 	}
-	return strings.Contains(string(body), "milvus_")
+	if status == 200 {
+		return len(body) > 0 && strings.Contains(string(body), "milvus_")
+	}
+	if status == 404 {
+		// Port doesn't serve /metrics (typical for port 19530). Fall back to
+		// the version endpoint as the discriminator: a selective decoy is unlikely
+		// to implement every Milvus-specific API path correctly.
+		return versionEndpointReal(c)
+	}
+	return false
+}
+
+// versionEndpointReal is the fallback discriminator for port 19530 (where /metrics
+// is not exposed). Cascade:
+//   1. POST /v2/vectordb/milvus/version -> version string present = real
+//   2. POST /v2/vectordb/collections/describe with a nonexistent collection name:
+//      code != 0 = real (Milvus error); code == 0 = catch-all decoy
+//   3. Cannot discriminate -> assume real (conservative)
+func versionEndpointReal(c *httpClient) bool {
+	type vResp struct {
+		Code int `json:"code"`
+		Data struct {
+			Version string `json:"version"`
+		} `json:"data"`
+	}
+	var vr vResp
+	vStatus, _ := c.post("/v2/vectordb/milvus/version", map[string]interface{}{}, &vr)
+	if vStatus == 200 && vr.Code == 0 && strings.HasPrefix(vr.Data.Version, "v") {
+		return true
+	}
+
+	// Ghost-describe: POST describe with a collection name guaranteed not to exist.
+	// Milvus returns code != 0 ("can't find collection"). A catch-all decoy returns code == 0.
+	// Collection names in Milvus are alphanumeric+underscore only.
+	type descResp struct {
+		Code int `json:"code"`
+	}
+	var dr descResp
+	dStatus, _ := c.post("/v2/vectordb/collections/describe",
+		map[string]interface{}{"collectionName": "milvscan_ghost_xyz9"}, &dr)
+	if dStatus == 200 {
+		return dr.Code != 0 // real Milvus returns non-zero for nonexistent collection
+	}
+
+	// Cannot discriminate; assume real (conservative -- prefer false positive over miss).
+	return true
 }
 
 // detectVersion reads the Milvus version from /v2/vectordb/milvus/version (v2)
