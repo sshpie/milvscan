@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nuclide-research/milvscan/internal/scanner"
+	"github.com/sshpie/milvscan/internal/scanner"
 )
 
 const usage = `milvscan -- Milvus unauth enumeration tool
-nuclide-research.com
+
 
 usage: milvscan [flags] <target-url>
 

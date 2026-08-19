@@ -119,9 +119,9 @@ func buildCanaryEntity(fields []FieldInfo) (map[string]interface{}, string, erro
 		case "VarChar", "VARCHAR", "String", "STRING":
 			if f.Primary {
 				pkField = f.Name
-				entity[f.Name] = fmt.Sprintf("nuclide-canary-%d", canaryPKValue)
+				entity[f.Name] = fmt.Sprintf("-canary-%d", canaryPKValue)
 			} else {
-				entity[f.Name] = "nuclide-canary"
+				entity[f.Name] = "-canary"
 			}
 		case "FloatVector", "FLOAT_VECTOR":
 			dim := f.Dimension
@@ -139,7 +139,7 @@ func buildCanaryEntity(fields []FieldInfo) (map[string]interface{}, string, erro
 			entity[f.Name] = map[string]interface{}{}
 			hasVector = true
 		case "JSON", "json":
-			entity[f.Name] = map[string]interface{}{"nuclide": true}
+			entity[f.Name] = map[string]interface{}{"": true}
 		case "Array", "ARRAY":
 			entity[f.Name] = []interface{}{}
 		}
